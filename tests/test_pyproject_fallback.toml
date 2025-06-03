@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
+
+[project]
+name = "test-project-fallback"
+version = "1.0.0"
+description = "Test project for fallback method"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+keywords = ["Python", "Tool"]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: Unix",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.10",
+]

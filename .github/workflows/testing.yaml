@@ -17,8 +17,8 @@ permissions: {}
 
 jobs:
   ### Test the GitHub Action in this Repository ###
-  tests:
-    name: "Action Testing"
+  test-external-repo:
+    name: "Test External Repository"
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -26,14 +26,249 @@ jobs:
       - name: "Checkout repository"
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      # Perform setup prior to running test(s)
       - name: "Checkout sample project repository"
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: "lfreleng-actions/test-python-project"
           path: "test-python-project"
 
-      - name: "Run Action: ${{ github.repository }}"
+      - name: "Test External Project"
+        id: test-external
         uses: ./
         with:
           path_prefix: "test-python-project/"
+
+      - name: "Validate External Project Output"
+        run: |
+          echo "Build Python: ${{ steps.test-external.outputs.BUILD_PYTHON }}"
+          echo "Matrix JSON: ${{ steps.test-external.outputs.MATRIX_JSON }}"
+          # Validate that outputs are not empty
+          if [ -z "${{ steps.test-external.outputs.BUILD_PYTHON }}" ]; then
+            echo "Error: BUILD_PYTHON output is empty"
+            exit 1
+          fi
+          if [ -z "${{ steps.test-external.outputs.MATRIX_JSON }}" ]; then
+            echo "Error: MATRIX_JSON output is empty"
+            exit 1
+          fi
+
+  test-requires-python:
+    name: "Test requires-python Method"
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        test-case:
+          - name: "basic-constraint"
+            file: "pyproject_requires_python_basic.toml"
+            expected-build: "3.14"
+            expected-versions: '["3.10","3.11","3.12","3.13","3.14"]'
+          - name: "strict-constraint"
+            file: "pyproject_requires_python_strict.toml"
+            expected-build: "3.14"
+            expected-versions: '["3.12","3.13","3.14"]'
+          - name: "exact-constraint"
+            file: "pyproject_requires_python_exact.toml"
+            expected-build: "3.11"
+            expected-versions: '["3.11"]'
+          - name: "greater-than-constraint"
+            file: "pyproject_requires_python_greater.toml"
+            expected-build: "3.14"
+            expected-versions: '["3.11","3.12","3.13","3.14"]'
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: "Test ${{ matrix.test-case.name }}"
+        id: test-requires-python
+        uses: ./
+        with:
+          path_prefix: "tests/"
+        env:
+          # Temporarily rename the test file to pyproject.toml for testing
+          TEST_FILE: ${{ matrix.test-case.file }}
+
+      - name: "Setup test file"
+        run: |
+          cp "tests/${{ matrix.test-case.file }}" "tests/pyproject.toml"
+
+      - name: "Run test with renamed file"
+        id: test-renamed
+        uses: ./
+        with:
+          path_prefix: "tests/"
+
+      - name: "Validate ${{ matrix.test-case.name }} Output"
+        run: |
+          echo "Expected Build Python: \
+            ${{ matrix.test-case.expected-build }}"
+          echo "Actual Build Python: \
+            ${{ steps.test-renamed.outputs.BUILD_PYTHON }}"
+          echo "Expected Matrix JSON: \
+            {\"python-version\": ${{ matrix.test-case.expected-versions }}}"
+          echo "Actual Matrix JSON: \
+            ${{ steps.test-renamed.outputs.MATRIX_JSON }}"
+
+          # Validate BUILD_PYTHON
+          if [ "${{ steps.test-renamed.outputs.BUILD_PYTHON }}" != \
+               "${{ matrix.test-case.expected-build }}" ]; then
+            echo "Error: BUILD_PYTHON mismatch"
+            exit 1
+          fi
+
+          # Validate MATRIX_JSON structure (basic validation)
+          if ! echo '${{ steps.test-renamed.outputs.MATRIX_JSON }}' | \
+               jq -e .python-version > /dev/null; then
+            echo "Error: Invalid MATRIX_JSON structure"
+            exit 1
+          fi
+
+      - name: "Cleanup test file"
+        run: rm -f "tests/pyproject.toml"
+
+  test-fallback-method:
+    name: "Test Fallback Method"
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        test-case:
+          - name: "classifiers-only"
+            file: "pyproject_classifiers_only.toml"
+            expected-build: "3.12"
+            expected-versions: '["3.10","3.11","3.12"]'
+          - name: "classifiers-fallback"
+            file: "pyproject_classifiers_fallback.toml"
+            expected-build: "3.12"
+            expected-versions: '["3.10","3.11","3.12"]'
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: "Setup test file"
+        run: |
+          cp "tests/${{ matrix.test-case.file }}" "tests/pyproject.toml"
+
+      - name: "Test ${{ matrix.test-case.name }}"
+        id: test-fallback
+        uses: ./
+        with:
+          path_prefix: "tests/"
+
+      - name: "Validate ${{ matrix.test-case.name }} Output"
+        run: |
+          echo "Expected Build Python: \
+            ${{ matrix.test-case.expected-build }}"
+          echo "Actual Build Python: \
+            ${{ steps.test-fallback.outputs.BUILD_PYTHON }}"
+          echo "Expected Matrix JSON: \
+            {\"python-version\": ${{ matrix.test-case.expected-versions }}}"
+          echo "Actual Matrix JSON: \
+            ${{ steps.test-fallback.outputs.MATRIX_JSON }}"
+
+          # Validate BUILD_PYTHON
+          if [ "${{ steps.test-fallback.outputs.BUILD_PYTHON }}" != \
+               "${{ matrix.test-case.expected-build }}" ]; then
+            echo "Error: BUILD_PYTHON mismatch"
+            exit 1
+          fi
+
+          # Validate MATRIX_JSON structure
+          if ! echo '${{ steps.test-fallback.outputs.MATRIX_JSON }}' | \
+               jq -e .python-version > /dev/null; then
+            echo "Error: Invalid MATRIX_JSON structure"
+            exit 1
+          fi
+
+      - name: "Cleanup test file"
+        run: rm -f "tests/pyproject.toml"
+
+  test-failure-conditions:
+    name: "Test Failure Conditions"
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        test-case:
+          - name: "no-python-info"
+            file: "pyproject_no_python_info.toml"
+            should-fail: true
+          - name: "unsupported-constraint"
+            file: "pyproject_unsupported_constraint.toml"
+            should-fail: false  # Should fall back to classifiers
+            expected-build: "3.12"
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: "Setup test file"
+        run: |
+          cp "tests/${{ matrix.test-case.file }}" "tests/pyproject.toml"
+
+      - name: "Test ${{ matrix.test-case.name }}"
+        id: test-failure
+        uses: ./
+        with:
+          path_prefix: "tests/"
+        continue-on-error: ${{ matrix.test-case.should-fail }}
+
+      - name: "Validate failure condition for ${{ matrix.test-case.name }}"
+        if: matrix.test-case.should-fail == true
+        run: |
+          # For tests that should fail, check that the step actually failed
+          if [ "${{ steps.test-failure.outcome }}" != "failure" ]; then
+            echo "Error: Expected test to fail but it succeeded"
+            exit 1
+          fi
+          echo "Test correctly failed as expected"
+
+      - name: "Validate success condition for ${{ matrix.test-case.name }}"
+        if: matrix.test-case.should-fail == false
+        run: |
+          # For tests that should succeed with fallback
+          if [ "${{ steps.test-failure.outcome }}" != "success" ]; then
+            echo "Error: Expected test to succeed with fallback \
+              but it failed"
+            exit 1
+          fi
+          if [ -n "${{ matrix.test-case.expected-build }}" ]; then
+            if [ "${{ steps.test-failure.outputs.BUILD_PYTHON }}" != \
+                "${{ matrix.test-case.expected-build }}" ]; then
+              echo "Error: BUILD_PYTHON mismatch in fallback test"
+              exit 1
+            fi
+          fi
+          echo "Test correctly succeeded with fallback"
+
+      - name: "Cleanup test file"
+        run: rm -f "tests/pyproject.toml"
+
+  test-missing-pyproject:
+    name: "Test Missing pyproject.toml"
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: "Create empty test directory"
+        run: mkdir -p empty-test-dir
+
+      - name: "Test missing pyproject.toml"
+        id: test-missing
+        uses: ./
+        with:
+          path_prefix: "empty-test-dir/"
+        continue-on-error: true
+
+      - name: "Validate missing pyproject.toml failure"
+        run: |
+          if [ "${{ steps.test-missing.outcome }}" != "failure" ]; then
+            echo "Error: Expected test to fail due to missing pyproject.toml"
+            exit 1
+          fi
+          echo "Test correctly failed due to missing pyproject.toml"

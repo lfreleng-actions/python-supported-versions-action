@@ -9,6 +9,13 @@ Parses pyproject.toml and extracts the Python versions supported by the
 project. Determines the most recent version supported and provides JSON
 representing all supported versions, for use in GitHub matrix jobs.
 
+**Primary Method**: Extracts from `requires-python` constraint
+(e.g. `requires-python = ">=3.10"`)
+**Fallback Method**: Parses `Programming Language :: Python ::` classifiers
+
+This brings alignment with actions/setup-python behavior while maintaining
+compatibility with projects that use explicit version classifiers.
+
 ## python-supported-versions-action
 
 ## Usage Example
@@ -37,8 +44,8 @@ representing all supported versions, for use in GitHub matrix jobs.
 
 For a Python project with the content below in its pyproject.toml file:
 
-```console
-requires-python = "<3.13,>=3.10"
+```toml
+requires-python = ">=3.10"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 keywords = ["Python", "Tool"]
@@ -56,22 +63,57 @@ classifiers = [
 A workflow calling this action will produce the output below:
 
 ```console
-Build Python: 3.12 💬
-Matrix JSON: {"python-version": ["3.10","3.11","3.12"]}
+Found requires-python constraint: >=3.10 💬
+Version constraint: >=3.10
+Extracted versions from requires-python: 3.10 3.11 3.12 3.13 3.14 💬
+Build Python: 3.14 💬
+Matrix JSON: {"python-version": ["3.10","3.11","3.12","3.13","3.14"]}
 ```
 
 ## Implementation Details
 
-This action produces output by parsing the lines containing:
+### Primary Method: requires-python Constraint
 
-```console
+The action first attempts to extract the `requires-python` constraint from pyproject.toml:
+
+```toml
+requires-python = ">=3.10"    # Supports 3.10, 3.11, 3.12, 3.13, 3.14
+requires-python = ">3.9"      # Supports 3.10, 3.11, 3.12, 3.13, 3.14
+requires-python = "==3.11"    # Supports 3.11 specifically
+```
+
+The action evaluates the constraint against supported Python versions
+(non-EOL) and returns all matching versions.
+
+**Supported constraint formats:**
+
+- `>=X.Y` - Version X.Y and above (most common)
+- `>X.Y` - Greater than version X.Y
+- `==X.Y` - Exact version X.Y
+
+### Fallback Method: Programming Language Classifiers
+
+If no `requires-python` constraint exists, the action falls back to
+parsing explicit version classifiers:
+
+```toml
+classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.10",
+]
 ```
 
-This may be different from other tooling that parses the pyproject.toml file
-for information, such as GitHub's actions/setup-python. That appears to use
-the "requires-python" string. Parsing that would require logic beyond the
-current scope of this action, but may be desirable to improve behavioural
-consistency.
+### Supported Python Versions
+
+The action includes all supported (non-EOL) Python versions
+as of June 2025:
+
+- Python 3.10
+- Python 3.11
+- Python 3.12
+- Python 3.13
+- Python 3.14
+
+This list requires updates as new Python versions become available
+and older versions reach end-of-life.
