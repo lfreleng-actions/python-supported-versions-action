@@ -7,101 +7,332 @@ name: "🐍 Extract Python Versions Supported by Project"
 description: "Returns Python version(s) for build and JSON for matrix jobs"
 # Note: build version is the most recent/latest Python
 
-# Future enhancement: switch extraction to use 'requires-python'
-# This would potentially bring alignment with actions/setup-python
-# e.g.
-# Run actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b
-# Extracted <3.13,>=3.10 from pyproject.toml
+# Primary extraction method uses 'requires-python' from pyproject.toml
+# This brings alignment with actions/setup-python behavior
+# e.g. requires-python = ">=3.10" extracts supported versions 3.10, 3.11,
+# 3.12, 3.13
+# Falls back to 'Programming Language :: Python ::' classifiers if
+# requires-python not found
 
 inputs:
   # Mandatory
-  PATH_PREFIX:
+  path_prefix:
     description: "Directory location containing project code"
-    type: string
+    # type: string
     required: false
+  network_timeout:
+    description: "Network timeout in seconds for API calls"
+    required: false
+    # type: number
+    default: "10"
+  max_retries:
+    description: "Maximum number of retry attempts for API calls"
+    required: false
+    # type: number
+    default: "2"
 
 outputs:
-  BUILD_PYTHON:
+  build_python:
     description: "Most recent Python version supported by project"
-    value: ${{ steps.parse.outputs.build_python }}
-  MATRIX_JSON:
+    value: "${{ steps.parse.outputs.build_python }}"
+  matrix_json:
     description: "All Python versions supported by project as JSON string"
     # Example: matrix_json = {"python-version": ["3.10", "3.11"]}
-    value: ${{ steps.parse.outputs.matrix_json }}
+    value: "${{ steps.parse.outputs.matrix_json }}"
 
 runs:
   using: "composite"
   steps:
-    - name: "Setup action/environment"
-      shell: bash
+    - name: "Setup and validate environment"
+      shell: "bash"
       run: |
-        # Setup action/environment
-        # Handle path_prefix input consistently and when absent
-        path_prefix="${{ inputs.PATH_PREFIX }}"
-        if [ -z "$path_prefix" ]; then
-          # Set current directory as path prefix
-          path_prefix="."
-        else
-          # Strip any trailing slash in provided path
-          path_prefix="${path_prefix%/}"
-        fi
-        # Verify is a valid directory path
-        if [ ! -d "$path_prefix" ]; then
-          echo "Error: invalid path/prefix to project directory ❌"; exit 1
-        fi
-        echo "path_prefix=$path_prefix" >> "$GITHUB_ENV"
+        # Setup and validate environment
+        path_prefix="${{ inputs.path_prefix }}"
+        path_prefix="${path_prefix:-"."}"
+        path_prefix="${path_prefix%/}"
 
-    - name: "Check for: pyproject.toml"
-      id: path-check
-      # yamllint disable-line rule:line-length
-      uses: lfreleng-actions/path-check-action@aa7dabfa92e50e31a0f091dd3e2741692e8dde07 # v0.1.5
-      with:
-        path: "${{ env.path_prefix }}/pyproject.toml"
-
-    - name: "Error: missing pyproject.toml file"
-      if: steps.path-check.outputs.type != 'file'
-      shell: bash
-      run: |
-        # Error: missing pyproject.toml file
-        echo "Error: missing pyproject.toml file ❌"
-        exit 1
-
-    - name: "Extract supported Python versions"
-      id: capture-versions
-      # yamllint disable-line rule:line-length
-      uses: lfreleng-actions/file-grep-regex-action@64fbf6bd3315530c6819e16c5b065e3bfc4f16d9 # v0.1.3
-      with:
-        flags: "-oP"
-        # https://regex101.com/r/0mhOlr/1
-        # Only matches explicit/full Python versions
-        # Those with major/minor versions, e.g. 3.10, 3.11
-        regex: '(?<="Programming Language :: Python :: ).*\..*(?=")'
-        filename: "${{ env.path_prefix }}/pyproject.toml"
-
-    - id: parse
-      name: "Process and transform extracted string"
-      shell: bash
-      run: |
-        # Process and transform extracted string
-        set -o pipefail
-
-        PYTHON_VERSIONS=$(echo \
-          "${{ steps.capture-versions.outputs.extracted_string }}" \
-          | sort | uniq | tr -d ' ') 2>/dev/null
-        BUILD_PYTHON=$(echo "${PYTHON_VERSIONS}" | sort -r | head -1)
-        STRING=$(echo "$PYTHON_VERSIONS" |\
-          awk '{print "\""$1"\""}' | paste -s -d, -)
-        STRING="[$STRING]"
-        MATRIX_JSON="{\"python-version\": $STRING}"
-        if ! (echo "$MATRIX_JSON" | jq); then
-          echo "Error: parsed string not valid JSON ❌"
+        # Validate directory and pyproject.toml existence
+        if [[ ! -d "$path_prefix" ]]; then
+          echo 'Error: invalid path/prefix to project directory ❌'
           exit 1
         fi
 
-        # Set action outputs
-        echo "build_python=$BUILD_PYTHON" >> "$GITHUB_ENV"
+        if [[ ! -f "$path_prefix/pyproject.toml" ]]; then
+          echo 'Error: missing pyproject.toml file ❌'
+          exit 1
+        fi
+
+        echo "path_prefix=$path_prefix" >> "$GITHUB_ENV"
+        echo "network_timeout=${{ inputs.network_timeout }}" >> "$GITHUB_ENV"
+        echo "max_retries=${{ inputs.max_retries }}" >> "$GITHUB_ENV"
+
+    - name: "Fetch supported Python versions dynamically"
+      shell: "bash"
+      run: |
+        # Fetch supported Python versions with EOL awareness
+        set -o pipefail
+
+        # Configuration
+        TIMEOUT="${{ env.network_timeout }}"
+        RETRIES="${{ env.max_retries }}"
+        STATIC_VERSIONS='3.9 3.10 3.11 3.12 3.13'
+        STATIC_EOL_DATA='3.8:2024-10-07 3.9:2025-10-31 3.10:2026-10-31'
+        STATIC_EOL_DATA="$STATIC_EOL_DATA 3.11:2027-10-31 3.12:2028-10-31 3.13:2029-10-31"
+
+        # Helper functions
+        fetch_eol_versions() {
+          local eol_data
+          if eol_data=$(curl -s --max-time "$TIMEOUT" --retry "$RETRIES" \
+            'https://endoflife.date/api/python.json' 2>/dev/null); then
+
+            local current_date
+            current_date=$(date +%Y-%m-%d)
+
+            # Parse EOL data and filter non-EOL versions
+            printf '%s\n' "$eol_data" | \
+            grep -E '"cycle":|"eol":' | \
+            paste - - | \
+            awk -F'\t' -v date="$current_date" '
+              {
+                gsub(/.*"cycle": *"([^"]*)".*/, "\\1", $1)
+                gsub(/.*"eol": *"([^"]*)".*/, "\\1", $2)
+                if ($2 != "null" && $2 > date && $1 ~ /^3\.(9|[1-9][0-9])$/) print $1
+              }
+            ' | sort -V | tr '\n' ' ' | sed 's/ $//'
+          else
+            return 1
+          fi
+        }
+
+        fetch_github_versions() {
+          local github_data
+          if github_data=$(curl -s --max-time "$TIMEOUT" --retry "$RETRIES" \
+            'https://api.github.com/repos/python/cpython/tags?per_page=100' 2>/dev/null); then
+
+            printf '%s\n' "$github_data" | \
+            grep -o '"name": "v[0-9]\+\.[0-9]\+\.[0-9]\+"' | \
+            grep -v -E '(a[0-9]|b[0-9]|rc[0-9])' | \
+            sed 's/.*"v\([0-9]\+\.[0-9]\+\)\.[0-9]\+".*/\1/' | \
+            sort -V | uniq | awk '$1 >= 3.9' | tr '\n' ' ' | sed 's/ $//'
+          else
+            return 1
+          fi
+        }
+
+        filter_static_eol() {
+          local current_date
+          current_date=$(date +%Y-%m-%d)
+          local versions=''
+
+          for entry in $STATIC_EOL_DATA; do
+            local version eol_date
+            version=$(printf '%s\n' "$entry" | cut -d':' -f1)
+            eol_date=$(printf '%s\n' "$entry" | cut -d':' -f2)
+
+            if [[ "$eol_date" > "$current_date" ]]; then
+              versions="$versions $version"
+            fi
+          done
+
+          printf '%s\n' "$versions" | sed 's/^ *//' | sed 's/ *$//'
+        }
+
+        # Main logic
+        echo 'Fetching Python versions with EOL awareness...'
+
+        # Try to get EOL-aware versions
+        if EOL_VERSIONS=$(fetch_eol_versions); then
+          echo "EOL-aware versions from API: $EOL_VERSIONS"
+        else
+          echo 'Warning: EOL API unavailable, using static EOL data'
+          EOL_VERSIONS=$(filter_static_eol)
+          echo "EOL-aware versions from static data: $EOL_VERSIONS"
+        fi
+
+        # Try to get GitHub versions and filter against EOL
+        if GITHUB_VERSIONS=$(fetch_github_versions); then
+          echo "GitHub versions found: $GITHUB_VERSIONS"
+
+          # Filter GitHub versions against EOL list
+          FINAL_VERSIONS=''
+          for version in $GITHUB_VERSIONS; do
+            if [[ " $EOL_VERSIONS " =~ " $version " ]]; then
+              FINAL_VERSIONS="$FINAL_VERSIONS $version"
+            fi
+          done
+
+          FINAL_VERSIONS=$(printf '%s\n' "$FINAL_VERSIONS" | sed 's/^ *//' | sed 's/ *$//')
+
+          if [[ -n "$FINAL_VERSIONS" ]]; then
+            echo "Using dynamic EOL-filtered versions: $FINAL_VERSIONS"
+            echo "all_supported_versions=$FINAL_VERSIONS" >> "$GITHUB_ENV"
+            echo 'versions_source=dynamic-eol-aware' >> "$GITHUB_ENV"
+          else
+            echo 'Warning: No valid EOL-filtered versions, using static fallback'
+            echo "all_supported_versions=$STATIC_VERSIONS" >> "$GITHUB_ENV"
+            echo 'versions_source=static' >> "$GITHUB_ENV"
+          fi
+        else
+          echo 'Warning: GitHub API unavailable, using static fallback'
+          echo "all_supported_versions=${EOL_VERSIONS:-$STATIC_VERSIONS}" >> "$GITHUB_ENV"
+          echo 'versions_source=static' >> "$GITHUB_ENV"
+        fi
+
+    - name: "Extract Python version constraints"
+      shell: "bash"
+      run: |
+        # Extract both requires-python and classifiers in one step
+        PYPROJECT_FILE="${{ env.path_prefix }}/pyproject.toml"
+
+        # Extract requires-python constraint
+        REQUIRES_PYTHON=$(grep -o 'requires-python\s*=\s*"[^"]*"' "$PYPROJECT_FILE" 2>/dev/null | \
+                         sed 's/.*"\([^"]*\)".*/\1/' || echo '')
+
+        # Extract classifiers fallback
+        CLASSIFIERS=$(grep -oP \
+          '(?<="Programming Language :: Python :: ).*\..*(?=")' \
+          "$PYPROJECT_FILE" 2>/dev/null | \
+          sort -V | uniq | tr '\n' ' ' | sed 's/ *$//' || echo '')
+
+        echo "requires_python=$REQUIRES_PYTHON" >> "$GITHUB_ENV"
+        echo "classifiers=$CLASSIFIERS" >> "$GITHUB_ENV"
+
+        if [[ -n "$REQUIRES_PYTHON" ]]; then
+          echo "Found requires-python constraint: $REQUIRES_PYTHON 💬"
+        elif [[ -n "$CLASSIFIERS" ]]; then
+          echo "Found Programming Language classifiers: $CLASSIFIERS 💬"
+        else
+          echo 'Warning: No Python version constraints found'
+        fi
+
+    - id: parse
+      name: "Process and determine supported Python versions"
+      shell: "bash"
+      run: |
+        # Process and transform extracted Python versions
+        set -o pipefail
+
+        ALL_SUPPORTED_VERSIONS="${{ env.all_supported_versions }}"
+        VERSIONS_SOURCE="${{ env.versions_source }}"
+        REQUIRES_PYTHON="${{ env.requires_python }}"
+        CLASSIFIERS="${{ env.classifiers }}"
+
+        echo "Using $VERSIONS_SOURCE Python versions: $ALL_SUPPORTED_VERSIONS 💬"
+
+        # Helper function to parse version constraints
+        parse_constraint() {
+          local constraint="$1"
+          local all_versions="$2"
+          local result=''
+
+          case "$constraint" in
+            \>=*)
+              local min_version="${constraint#>=}"
+              min_version="${min_version%%,*}"  # Handle comma-separated constraints
+              for version in $all_versions; do
+                if [[ "$(printf '%s\n%s\n' "$min_version" "$version" | \
+                         sort -V | head -n1)" == "$min_version" ]]; then
+                  result="$result $version"
+                fi
+              done
+              ;;
+            \>*)
+              local min_version="${constraint#>}"
+              min_version="${min_version%%,*}"
+              for version in $all_versions; do
+                if [[ "$(printf '%s\n%s\n' "$min_version" "$version" | \
+                         sort -V | tail -n1)" == "$version" && \
+                         "$version" != "$min_version" ]]; then
+                  result="$result $version"
+                fi
+              done
+              ;;
+            ==*)
+              local exact_version="${constraint#==}"
+              exact_version="${exact_version%%,*}"
+              for version in $all_versions; do
+                if [[ "$version" == "$exact_version" ]]; then
+                  result="$version"
+                  break
+                fi
+              done
+              ;;
+            *)
+              echo "Warning: Unsupported constraint format: $constraint"
+              return 1
+              ;;
+          esac
+
+          printf '%s\n' "$result" | sed 's/^ *//' | sed 's/ *$//'
+        }
+
+        # Generate JSON without external dependencies
+        generate_json() {
+          local versions="$1"
+          local json_array=''
+
+          for version in $versions; do
+            if [[ -n "$json_array" ]]; then
+              json_array="$json_array,\"$version\""
+            else
+              json_array="\"$version\""
+            fi
+          done
+
+          echo "{\"python-version\": [$json_array]}"
+        }
+
+        # Validate JSON format
+        validate_json() {
+          local json="$1"
+          # Basic JSON validation without external tools
+          if [[ "$json" =~ ^\{\"python-version\":[[:space:]]*\[.*\]\}$ ]]; then
+            return 0
+          else
+            return 1
+          fi
+        }
+
+        # Main processing logic
+        PYTHON_VERSIONS=''
+
+        if [[ -n "$REQUIRES_PYTHON" ]]; then
+          echo "Processing requires-python constraint: $REQUIRES_PYTHON"
+
+          if PYTHON_VERSIONS=$(parse_constraint "$REQUIRES_PYTHON" "$ALL_SUPPORTED_VERSIONS"); then
+            echo "Extracted versions from requires-python: $PYTHON_VERSIONS 💬"
+          else
+            echo 'Warning: Failed to parse requires-python constraint'
+          fi
+        fi
+
+        # Fall back to classifiers if no versions from requires-python
+        if [[ -z "$PYTHON_VERSIONS" && -n "$CLASSIFIERS" ]]; then
+          echo 'Using Programming Language classifiers fallback'
+          PYTHON_VERSIONS="$CLASSIFIERS"
+        fi
+
+        # Final validation
+        if [[ -z "$PYTHON_VERSIONS" ]]; then
+          echo 'Error: No Python versions found ❌'
+          exit 1
+        fi
+
+        # Sort versions and generate outputs
+        PYTHON_VERSIONS=$(printf '%s\n' $PYTHON_VERSIONS | sort -V | tr '\n' ' ' | sed 's/ *$//')
+        BUILD_PYTHON=$(printf '%s\n' $PYTHON_VERSIONS | tr ' ' '\n' | sort -V | tail -1)
+        MATRIX_JSON=$(generate_json "$PYTHON_VERSIONS")
+
+        # Validate generated JSON
+        if ! validate_json "$MATRIX_JSON"; then
+          echo 'Error: Generated invalid JSON format ❌'
+          exit 1
+        fi
+
+        # Set outputs
         echo "build_python=$BUILD_PYTHON" >> "$GITHUB_OUTPUT"
-        echo "Build Python: $BUILD_PYTHON 💬"
-        echo "matrix_json=$MATRIX_JSON" >> "$GITHUB_ENV"
         echo "matrix_json=$MATRIX_JSON" >> "$GITHUB_OUTPUT"
-        echo "Matrix JSON: $MATRIX_JSON"
+
+        echo "Build Python: $BUILD_PYTHON 💬"
+        echo "Matrix JSON: $MATRIX_JSON 💬"
+        echo "All versions: $PYTHON_VERSIONS 💬"
