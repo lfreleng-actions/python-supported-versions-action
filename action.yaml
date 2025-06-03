@@ -7,11 +7,12 @@ name: "🐍 Extract Python Versions Supported by Project"
 description: "Returns Python version(s) for build and JSON for matrix jobs"
 # Note: build version is the most recent/latest Python
 
-# Future enhancement: switch extraction to use 'requires-python'
-# This would potentially bring alignment with actions/setup-python
-# e.g.
-# Run actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b
-# Extracted <3.13,>=3.10 from pyproject.toml
+# Primary extraction method uses 'requires-python' from pyproject.toml
+# This brings alignment with actions/setup-python behavior
+# e.g. requires-python = ">=3.10" extracts supported versions 3.10, 3.11,
+# 3.12, 3.13
+# Falls back to 'Programming Language :: Python ::' classifiers if
+# requires-python not found
 
 inputs:
   # Mandatory
@@ -66,8 +67,20 @@ runs:
         echo "Error: missing pyproject.toml file ❌"
         exit 1
 
-    - name: "Extract supported Python versions"
-      id: capture-versions
+    - name: "Extract requires-python constraint"
+      id: capture-requires-python
+      # yamllint disable-line rule:line-length
+      uses: lfreleng-actions/file-grep-regex-action@64fbf6bd3315530c6819e16c5b065e3bfc4f16d9 # v0.1.3
+      with:
+        flags: "-o"
+        # Match requires-python value, e.g. ">=3.10", ">=3.10,<3.13"
+        # Note: This will extract the full match, we'll parse it in the
+        # shell script
+        regex: 'requires-python\s*=\s*"[^"]*"'
+        filename: "${{ env.path_prefix }}/pyproject.toml"
+
+    - name: "Extract supported Python versions (fallback)"
+      id: capture-versions-fallback
       # yamllint disable-line rule:line-length
       uses: lfreleng-actions/file-grep-regex-action@64fbf6bd3315530c6819e16c5b065e3bfc4f16d9 # v0.1.3
       with:
@@ -79,17 +92,109 @@ runs:
         filename: "${{ env.path_prefix }}/pyproject.toml"
 
     - id: parse
-      name: "Process and transform extracted string"
+      name: "Process and transform extracted Python versions"
       shell: bash
       run: |
-        # Process and transform extracted string
+        # Process and transform extracted Python versions
         set -o pipefail
 
-        PYTHON_VERSIONS=$(echo \
-          "${{ steps.capture-versions.outputs.extracted_string }}" \
-          | sort | uniq | tr -d ' ') 2>/dev/null
-        BUILD_PYTHON=$(echo "${PYTHON_VERSIONS}" | sort -r | head -1)
-        STRING=$(echo "$PYTHON_VERSIONS" |\
+        # Define currently supported Python versions (not end-of-life)
+        # Updated as of June 2025: 3.10, 3.11, 3.12, 3.13, 3.14
+        # TODO: Update this list as new Python versions are released and
+        # older versions reach EOL
+        # See: https://devguide.python.org/versions/
+        ALL_SUPPORTED_VERSIONS="3.10 3.11 3.12 3.13 3.14"
+
+        REQUIRES_PYTHON_RAW="${{
+          steps.capture-requires-python.outputs.extracted_string }}"
+
+        if [ -n "$REQUIRES_PYTHON_RAW" ]; then
+          # Extract the value from requires-python = "value" format
+          REQUIRES_PYTHON=$(echo "$REQUIRES_PYTHON_RAW" | \
+            sed 's/.*"\([^"]*\)".*/\1/')
+          echo "Found requires-python constraint: $REQUIRES_PYTHON 💬"
+
+          # Parse requires-python constraint and determine supported versions
+          PYTHON_VERSIONS=""
+
+          # Simple parsing for common constraint formats
+          # Handle >=X.Y format (most common)
+          if [[ "$REQUIRES_PYTHON" =~ ^'>='([0-9]+\.[0-9]+) ]]; then
+            MIN_VERSION="${BASH_REMATCH[1]}"
+            echo "Minimum version requirement: >=$MIN_VERSION"
+
+            for version in $ALL_SUPPORTED_VERSIONS; do
+              if [ "$(printf '%s\n' "$MIN_VERSION" "$version" | \
+                sort -V | head -n1)" = "$MIN_VERSION" ]; then
+                if [ -z "$PYTHON_VERSIONS" ]; then
+                  PYTHON_VERSIONS="$version"
+                else
+                  PYTHON_VERSIONS="$PYTHON_VERSIONS $version"
+                fi
+              fi
+            done
+          # Handle >X.Y format
+          elif [[ "$REQUIRES_PYTHON" =~ ^'>'([0-9]+\.[0-9]+) ]]; then
+            MIN_VERSION="${BASH_REMATCH[1]}"
+            echo "Minimum version requirement: >$MIN_VERSION"
+
+            for version in $ALL_SUPPORTED_VERSIONS; do
+              if [ "$(printf '%s\n' "$MIN_VERSION" "$version" | \
+                sort -V | tail -n1)" = "$version" ] && \
+                [ "$version" != "$MIN_VERSION" ]; then
+                if [ -z "$PYTHON_VERSIONS" ]; then
+                  PYTHON_VERSIONS="$version"
+                else
+                  PYTHON_VERSIONS="$PYTHON_VERSIONS $version"
+                fi
+              fi
+            done
+          # Handle ==X.Y format
+          elif [[ "$REQUIRES_PYTHON" =~ ^'=='([0-9]+\.[0-9]+) ]]; then
+            EXACT_VERSION="${BASH_REMATCH[1]}"
+            echo "Exact version requirement: ==$EXACT_VERSION"
+
+            for version in $ALL_SUPPORTED_VERSIONS; do
+              if [ "$version" = "$EXACT_VERSION" ]; then
+                PYTHON_VERSIONS="$version"
+                break
+              fi
+            done
+          else
+            echo "Warning: Unsupported requires-python format: $REQUIRES_PYTHON"
+            echo "Supported formats: >=X.Y, >X.Y, ==X.Y"
+          fi
+
+          if [ -z "$PYTHON_VERSIONS" ]; then
+            echo "Warning: No supported versions found from \
+              requires-python constraint"
+            echo "Falling back to Programming Language \
+              classifiers method..."
+            FALLBACK="${{ steps.capture-versions-fallback.outputs.extracted_string }}"
+            PYTHON_VERSIONS=$(echo \
+              "$FALLBACK" \
+              | sort | uniq | tr -d ' ') 2>/dev/null
+          else
+            echo "Extracted versions from requires-python: \
+              $PYTHON_VERSIONS 💬"
+          fi
+        else
+          echo "No requires-python found, using Programming Language \
+            classifiers fallback..."
+          FALLBACK="${{ steps.capture-versions-fallback.outputs.extracted_string }}"
+          PYTHON_VERSIONS=$(echo \
+            "$FALLBACK" \
+            | sort | uniq | tr -d ' ') 2>/dev/null
+        fi
+
+        if [ -z "$PYTHON_VERSIONS" ]; then
+          echo "Error: No Python versions found ❌"
+          exit 1
+        fi
+
+        BUILD_PYTHON=$(echo "${PYTHON_VERSIONS}" | tr ' ' '\n' | \
+          sort -V | tail -1)
+        STRING=$(echo "$PYTHON_VERSIONS" | tr ' ' '\n' | sort -V |\
           awk '{print "\""$1"\""}' | paste -s -d, -)
         STRING="[$STRING]"
         MATRIX_JSON="{\"python-version\": $STRING}"
