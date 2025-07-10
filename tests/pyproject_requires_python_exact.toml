@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
+
+[project]
+name = "test-requires-python-exact"
+version = "1.0.0"
+description = "Test project with exact requires-python constraint"
+requires-python = "==3.11"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+keywords = ["Python", "Tool"]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: Unix",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+]
