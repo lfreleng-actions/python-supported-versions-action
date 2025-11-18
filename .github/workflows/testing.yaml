@@ -31,7 +31,7 @@ jobs:
           egress-policy: 'audit'
 
       - name: 'Checkout repository'
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
       - name: 'Run comprehensive test suite'
         run: |
@@ -47,10 +47,10 @@ jobs:
     timeout-minutes: 8
     steps:
       - name: 'Checkout repository'
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
       - name: 'Checkout sample project repository'
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           repository: 'lfreleng-actions/test-python-project'
           path: 'test-python-project'
@@ -120,7 +120,7 @@ jobs:
     timeout-minutes: 8
     steps:
       - name: 'Checkout repository'
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
       - name: 'Create empty test directory'
         run: mkdir -p empty-test-dir
@@ -165,7 +165,7 @@ jobs:
             expected_build: "3.12"
     steps:
       - name: 'Checkout repository'
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
       - name: 'Prepare fixture workspace'
         run: |
