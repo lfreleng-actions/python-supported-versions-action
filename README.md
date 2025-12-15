@@ -43,13 +43,13 @@ of your Github workflow:
 
 <!-- markdownlint-disable MD013 -->
 
-| Variable Name     | Description                                             | Required | Default |
-| ----------------- | ------------------------------------------------------- | -------- | ------- |
-| path_prefix       | Directory location containing project code              | false    | '.'     |
-| network_timeout   | Network timeout in seconds for API calls               | false    | '6'     |
-| max_retries       | Number of retry attempts for API calls                 | false    | '2'     |
-| eol_behaviour     | How to handle EOL Python versions: warn\|strip\|fail   | false    | 'warn'  |
-| offline_mode      | Disable network lookups and use internal version list | false | 'false' |
+| Variable Name   | Description                                           | Required | Default |
+| --------------- | ----------------------------------------------------- | -------- | ------- |
+| path_prefix     | Directory location containing project code            | false    | '.'     |
+| network_timeout | Network timeout in seconds for API calls              | false    | '6'     |
+| max_retries     | Number of retry attempts for API calls                | false    | '2'     |
+| eol_behaviour   | How to handle EOL Python versions: warn\|strip\|fail  | false    | 'warn'  |
+| offline_mode    | Disable network lookups and use internal version list | false    | 'false' |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -123,11 +123,11 @@ Error: Python 3.8 became unsupported/EOL on date: 2024-10-07 🛑
 
 <!-- markdownlint-disable MD013 -->
 
-| Variable Name      | Description                                                |
-| ------------------ | ---------------------------------------------------------- |
-| build_python       | Most recent Python version supported by project           |
-| matrix_json        | All Python versions supported by project as JSON string   |
-| supported_versions | Space-separated list of all supported Python versions     |
+| Variable Name      | Description                                             |
+| ------------------ | ------------------------------------------------------- |
+| build_python       | Most recent Python version supported by project         |
+| matrix_json        | All Python versions supported by project as JSON string |
+| supported_versions | Space-separated list of all supported Python versions   |
 
 <!-- markdownlint-enable MD013 -->
 
