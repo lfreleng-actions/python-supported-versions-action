@@ -99,9 +99,11 @@ jobs:
             exit 1
           fi
 
-          # For test-python-project, we expect Python 3.11 and 3.12 based on requires-python = "<3.13,>=3.11"
+          # For test-python-project, validate against the expected Python versions.
+          # The expected versions are stored in the EXPECTED_VERSION_JSON GitHub variable
+          # to avoid hardcoding and allow easy updates when upstream project support changes.
           # yamllint disable-line rule:line-length
-          expected_json='{"python-version":["3.11","3.12"]}'
+          expected_json='${{ vars.EXPECTED_VERSION_JSON }}'
           if [ "$expected_json" != "$actual_json" ]; then
             echo "Error: matrix_json mismatch for test-python-project"
             echo "Expected: $expected_json"
