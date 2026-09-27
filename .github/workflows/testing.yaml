@@ -57,11 +57,6 @@ jobs:
       contents: read
     timeout-minutes: 8
     steps:
-      - name: 'Checkout repository'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       - name: 'Checkout sample project repository'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -73,7 +68,7 @@ jobs:
 
       - name: 'Test External Project'
         id: test-external
-        uses: ./
+        uses: $/
         with:
           path_prefix: 'test-python-project/'
 
@@ -177,18 +172,12 @@ jobs:
       contents: read
     timeout-minutes: 8
     steps:
-      - name: 'Checkout repository'
-        # yamllint disable-line rule:line-length
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       - name: 'Create empty test directory'
         run: mkdir -p empty-test-dir
 
       - name: 'Run action against empty directory'
         id: test-missing
-        uses: ./
+        uses: $/
         with:
           path_prefix: 'empty-test-dir/'
 
@@ -273,7 +262,7 @@ jobs:
 
       - name: 'Run action on Poetry fixture (offline)'
         id: run
-        uses: ./
+        uses: $/
         with:
           path_prefix: '${{ env.WORKDIR }}/'
           offline_mode: 'true'
