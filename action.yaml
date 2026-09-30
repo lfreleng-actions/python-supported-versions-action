@@ -95,7 +95,7 @@ runs:
 
         # Setup and validate environment
         path_prefix="${INPUT_PATH_PREFIX}"
-        path_prefix="${path_prefix:-'.'}"
+        path_prefix="${path_prefix:-.}"
         path_prefix="${path_prefix%/}"
 
         # Set PYPROJECT_FILE after path normalization
