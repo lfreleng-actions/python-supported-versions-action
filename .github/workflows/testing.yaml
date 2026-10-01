@@ -164,6 +164,101 @@ jobs:
           STEPS_TEST_EXTERNAL_OUTPUTS_BUILD_PYTHON: ${{ steps.test-external.outputs.build_python }}
           STEPS_TEST_EXTERNAL_OUTPUTS_MATRIX_JSON: ${{ steps.test-external.outputs.matrix_json }}
 
+  ### Test empty path_prefix (falls back to the workspace root) ###
+  test-empty-path-prefix:
+    name: 'Test Empty path_prefix'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 8
+    steps:
+      # Check out the sample project at the workspace root, so an omitted
+      # and an empty path_prefix must both resolve to it
+      - name: 'Checkout sample project repository'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: 'lfreleng-actions/test-python-project'
+          persist-credentials: false
+
+      # Offline mode keeps both runs on the same internal version list, so
+      # their outputs cannot diverge through a flaky EOL API lookup
+      - name: 'Run action with path_prefix omitted (input default)'
+        id: test-default
+        uses: $/
+        with:
+          offline_mode: 'true'
+
+      # The input default applies only when the key is absent; an explicit
+      # empty value reaches the script as an empty string
+      - name: 'Run action with empty path_prefix'
+        id: test-empty
+        uses: $/
+        with:
+          path_prefix: ''
+          offline_mode: 'true'
+
+      - name: 'Validate empty path_prefix matches the default'
+        env:
+          DEFAULT_OUTCOME: ${{ steps.test-default.outcome }}
+          EMPTY_OUTCOME: ${{ steps.test-empty.outcome }}
+          DEFAULT_BUILD_PYTHON: ${{ steps.test-default.outputs.build_python }}
+          EMPTY_BUILD_PYTHON: ${{ steps.test-empty.outputs.build_python }}
+          DEFAULT_MATRIX_JSON: ${{ steps.test-default.outputs.matrix_json }}
+          EMPTY_MATRIX_JSON: ${{ steps.test-empty.outputs.matrix_json }}
+          DEFAULT_SUPPORTED_VERSIONS: ${{ steps.test-default.outputs.supported_versions }}
+          EMPTY_SUPPORTED_VERSIONS: ${{ steps.test-empty.outputs.supported_versions }}
+          DEFAULT_VERSIONS_SOURCE: ${{ steps.test-default.outputs.versions_source }}
+          EMPTY_VERSIONS_SOURCE: ${{ steps.test-empty.outputs.versions_source }}
+        run: |
+          set -euo pipefail
+          if [ "$DEFAULT_OUTCOME" != "success" ] || [ "$EMPTY_OUTCOME" != "success" ]; then
+            echo "::error::Action did not succeed (default=$DEFAULT_OUTCOME empty=$EMPTY_OUTCOME)"
+            exit 1
+          fi
+
+          # A fallback source would mean the project metadata at the
+          # workspace root was never read
+          case "$EMPTY_VERSIONS_SOURCE" in
+            ''|eol-fallback|static-fallback)
+              echo "::error::Workspace root metadata not used (versions_source='$EMPTY_VERSIONS_SOURCE')"
+              exit 1
+              ;;
+          esac
+          if [ -z "$EMPTY_SUPPORTED_VERSIONS" ]; then
+            echo "::error::supported_versions is empty"
+            exit 1
+          fi
+          if ! printf '%s' "$EMPTY_BUILD_PYTHON" | grep -Eq '^[0-9]+\.[0-9]+$'; then
+            echo "::error::build_python is empty or malformed: '$EMPTY_BUILD_PYTHON'"
+            exit 1
+          fi
+          versions_count=$(printf '%s' "$EMPTY_MATRIX_JSON" | jq -r '."python-version" | length')
+          if [ -z "$versions_count" ] || [ "$versions_count" -lt 1 ]; then
+            echo "::error::matrix_json has empty or missing python-version array: '$EMPTY_MATRIX_JSON'"
+            exit 1
+          fi
+
+          status=0
+          assert_same() {
+            if [ "$2" != "$3" ]; then
+              echo "::error::$1 differs: default='$2' empty='$3'"
+              status=1
+            fi
+          }
+          assert_same build_python "$DEFAULT_BUILD_PYTHON" "$EMPTY_BUILD_PYTHON"
+          assert_same matrix_json "$DEFAULT_MATRIX_JSON" "$EMPTY_MATRIX_JSON"
+          assert_same supported_versions "$DEFAULT_SUPPORTED_VERSIONS" "$EMPTY_SUPPORTED_VERSIONS"
+          assert_same versions_source "$DEFAULT_VERSIONS_SOURCE" "$EMPTY_VERSIONS_SOURCE"
+          if [ "$status" -ne 0 ]; then
+            exit 1
+          fi
+
+          echo "Empty path_prefix resolved to the workspace root ✅"
+          echo "  versions_source=$EMPTY_VERSIONS_SOURCE"
+          echo "  supported_versions=$EMPTY_SUPPORTED_VERSIONS"
+          echo "  build_python=$EMPTY_BUILD_PYTHON"
+          echo "  matrix_json=$EMPTY_MATRIX_JSON"
+
   ### Test Missing project metadata files (fallback behaviour) ###
   test-missing-pyproject:
     name: 'Test Missing project metadata files'
