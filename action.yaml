@@ -361,18 +361,6 @@ runs:
             echo "$constraint"
         }
 
-        # Function: Extract requires-python constraint from pyproject.toml using Python
-        extract_requires_python_python() {
-            local pyproject_file="$1"
-
-            if [[ ! -f "$pyproject_file" ]]; then
-                return 1
-            fi
-
-            # Try using Python with tomllib (Python 3.11+) or tomli
-            python3 -c "import sys, importlib.util as iu; fp=sys.argv[1]; tmod='tomllib' if iu.find_spec('tomllib') else ('tomli' if iu.find_spec('tomli') else 'toml'); t=__import__(tmod); data=t.load(open(fp, 'rb' if tmod!='toml' else 'r')); v=(data.get('project', {}).get('requires-python') or data.get('tool', {}).get('poetry', {}).get('dependencies', {}).get('python')); print(v) if v else None; sys.exit(0 if v else 1)" "$pyproject_file" 2>/dev/null
-        }
-
         # Function: Extract requires-python constraint from pyproject.toml (fallback)
         extract_requires_python_fallback() {
             local pyproject_file="$1"
@@ -791,13 +779,7 @@ runs:
           fi
         elif [[ -f "$PYPROJECT_FILE" ]]; then
           # Legacy inline path: pyproject-only.
-          REQUIRES_PYTHON=""
-          if command -v python3 >/dev/null 2>&1; then
-            REQUIRES_PYTHON=$(extract_requires_python_python "$PYPROJECT_FILE" || true)
-          fi
-          if [[ -z "$REQUIRES_PYTHON" ]]; then
-            REQUIRES_PYTHON=$(extract_requires_python_fallback "$PYPROJECT_FILE" || true)
-          fi
+          REQUIRES_PYTHON=$(extract_requires_python_fallback "$PYPROJECT_FILE" || true)
           CLASSIFIERS=$(extract_classifiers_fallback "$PYPROJECT_FILE" || true)
           if [[ -n "$REQUIRES_PYTHON" ]]; then
             if REQUESTED_PYTHON_VERSIONS=$(parse_version_constraint "$REQUIRES_PYTHON" "$SUPPORTED_VERSIONS"); then

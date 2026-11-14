@@ -329,7 +329,8 @@ self-contained, portable solution that doesn't require external dependencies.
 - Robust error handling and graceful degradation
 - Enhanced TOML parsing supporting both single and double quotes
 - Support for Poetry constraints (^3.10, ~=3.10) and complex ranges
-- Dual-approach TOML parsing: Python-based primary, regex fallback
+- TOML parsing in shell, with no Python interpreter, so the caller's
+  `PATH` never chooses one and offline runs download nothing
 - Portable version comparison that works on all GitHub runner types
 
 ### Supported Python Versions
