@@ -5,6 +5,13 @@
 
 # 🐍 Extract Python Versions Supported by Project
 
+> [!WARNING]
+> Deprecated: this action receives no further updates, and the
+> maintainers will archive the repository.
+> [`supported-versions-action`](https://github.com/lfreleng-actions/supported-versions-action)
+> replaces it; see
+> [Migrating to supported-versions-action](#migrating-to-supported-versions-action).
+
 Parses Python project metadata (`pyproject.toml`, `setup.cfg`, or `setup.py`)
 and extracts the Python versions supported by the project. Determines the
 most recent version supported and provides JSON representing all supported
@@ -37,6 +44,42 @@ If the network call fails, the action will continue with a warning and rely
 solely on the constraints found in pyproject.toml.
 
 ## python-supported-versions-action
+
+## Migrating to supported-versions-action
+
+[`supported-versions-action`](https://github.com/lfreleng-actions/supported-versions-action)
+answers the same question for Python, Go, Node.js, Java, Maven, Gradle
+and Rust from one catalog. Replace this action's step with:
+
+<!-- markdownlint-disable MD013 -->
+
+```yaml
+  - name: "Get project supported Python versions"
+    id: versions
+    uses: lfreleng-actions/supported-versions-action@dbe30689f59131d86b5ac0c757f26e759172ebc1  # v0.2.0
+    with:
+      tool: python
+```
+
+| This action                                                            | `supported-versions-action`                                                                                     |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| No `tool` input                                                        | Requires `tool: python`                                                                                         |
+| Output `build_python`                                                  | Output `latest`                                                                                                 |
+| Outputs `matrix_json`, `supported_versions`                            | Same names; `matrix_json` keeps the `python-version` key                                                        |
+| Output `versions_source`                                               | Same name, different meaning: where the release facts came from (`live`, `cache`, `stale` or `snapshot:<date>`) |
+| Input `eol_behaviour`: `warn`, `strip` or `fail`; default `warn`       | Same name, adds `allow`; empty keeps the catalog's behaviour                                                    |
+| Inputs `path_prefix`, `offline_mode`, `network_timeout`, `max_retries` | Same names                                                                                                      |
+| Input `default_python_version`                                         | None                                                                                                            |
+
+<!-- markdownlint-enable MD013 -->
+
+A workflow that wants the matrix together with the rest of the
+project's metadata can call
+[`build-metadata-action`](https://github.com/lfreleng-actions/build-metadata-action)
+instead and read `python_matrix_json` and `python_build_version`, as the
+reusable workflows in
+[`python-workflows`](https://github.com/lfreleng-actions/python-workflows)
+do.
 
 ## Basic Usage Example
 

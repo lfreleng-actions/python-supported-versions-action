@@ -4,7 +4,7 @@
 
 # python-supported-versions-action
 name: "🐍 Extract Python Versions Supported by Project"
-description: "Returns Python version(s) for build and JSON for matrix jobs"
+description: "Deprecated: use lfreleng-actions/supported-versions-action"
 # Note: build version is the most recent/latest Python
 
 # Primary extraction method uses 'requires-python' from pyproject.toml
@@ -68,6 +68,17 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: "Deprecation notice"
+      shell: bash
+      env:
+        # yamllint disable-line rule:line-length
+        MIGRATION_GUIDE: "https://github.com/lfreleng-actions/python-supported-versions-action#migrating-to-supported-versions-action"
+      run: |
+        # Surfaces in the caller's run summary as an annotation
+        echo "::warning title=python-supported-versions-action is" \
+          "deprecated::Use lfreleng-actions/supported-versions-action" \
+          "with 'tool: python' instead. See ${MIGRATION_GUIDE}"
+
     - id: versions
       name: "Process and determine supported Python versions"
       shell: "bash"
